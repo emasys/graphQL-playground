@@ -2,43 +2,34 @@ import React, { Component } from 'react';
 import axiosGitHubGraphQL from '../config/axiosConfig';
 import Organization from './Organization';
 
-const GET_ORGANIZATION = `
-  {
-    organization(login: "the-road-to-learn-react") {
-      name
-      url
-    }
-  }
-`;
-
-const GET_REPOSITORY_OF_ORGANIZATION = `
-  {
-    organization(login: "the-road-to-learn-react") {
-      name
-      url
-      repository(name: "the-road-to-learn-react") {
-        name
-        url
-      }
-    }
-  }
-`;
-
 const GET_ISSUES_OF_REPOSITORY = `
-  {
-    organization(login: "the-road-to-learn-react") {
+  query ($organization: String!, $repository: String!, $cursor: String) {
+    organization(login: $organization) {
       name
       url
-      repository(name: "the-road-to-learn-react") {
+      repository(name: $repository) {
         name
         url
-        issues(last: 5) {
+        issues(first: 5, after: $cursor, states: [OPEN]) {
           edges {
             node {
               id
               title
               url
+              reactions(last: 3) {
+                edges {
+                  node {
+                    id
+                    content
+                  }
+                }
+              }
             }
+          }
+          totalCount
+          pageInfo {
+            endCursor
+            hasNextPage
           }
         }
       }
@@ -46,6 +37,43 @@ const GET_ISSUES_OF_REPOSITORY = `
   }
 `;
 
+const getIssuesOfRepository = (path, cursor) => {
+  const [organization, repository] = path.split('/');
+
+  return axiosGitHubGraphQL.post('', {
+    query: GET_ISSUES_OF_REPOSITORY,
+    variables: { organization, repository, cursor }
+  });
+};
+
+const resolveIssuesQuery = (queryResult, cursor) => (state) => {
+  const { data, errors } = queryResult.data;
+
+  if (!cursor) {
+    return {
+      organization: data.organization,
+      errors
+    };
+  }
+
+  const { edges: oldIssues } = state.organization.repository.issues;
+  const { edges: newIssues } = data.organization.repository.issues;
+  const updatedIssues = [...oldIssues, ...newIssues];
+
+  return {
+    organization: {
+      ...data.organization,
+      repository: {
+        ...data.organization.repository,
+        issues: {
+          ...data.organization.repository.issues,
+          edges: updatedIssues
+        }
+      }
+    },
+    errors
+  };
+};
 class App extends Component {
   state = {
     path: 'the-road-to-learn-react/the-road-to-learn-react',
@@ -54,16 +82,18 @@ class App extends Component {
   };
 
   componentDidMount() {
-    this.onFetchFromGitHub(GET_ISSUES_OF_REPOSITORY);
+    this.onFetchFromGitHub(this.state.path);
   }
 
-  onFetchFromGitHub = (query) => {
-    axiosGitHubGraphQL.post('', { query }).then((result) =>
-      this.setState({
-        organization: result.data.data.organization,
-        error: result.data.errors
-      })
+  onFetchFromGitHub = (path, cursor) => {
+    getIssuesOfRepository(path, cursor).then((queryResult) =>
+      this.setState(resolveIssuesQuery(queryResult, cursor))
     );
+  };
+
+  onFetchMoreIssues = () => {
+    const { endCursor } = this.state.organization.repository.issues.pageInfo;
+    this.onFetchFromGitHub(this.state.path, endCursor);
   };
 
   onChange = (event) => {
@@ -71,7 +101,7 @@ class App extends Component {
   };
 
   onSubmit = (event) => {
-    // fetch data
+    this.onFetchFromGitHub(this.state.path);
 
     event.preventDefault();
   };
@@ -94,7 +124,11 @@ class App extends Component {
         </form>
         <hr />
         {organization && (
-          <Organization organization={organization} errors={error} />
+          <Organization
+            organization={organization}
+            errors={error}
+            onFetchMoreIssues={this.onFetchMoreIssues}
+          />
         )}
       </div>
     );
