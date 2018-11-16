@@ -8,6 +8,8 @@ const GET_ISSUES_OF_REPOSITORY = `
       name
       url
       repository(name: $repository) {
+        id
+        viewerHasStarred
         name
         url
         issues(first: 5, after: $cursor, states: [OPEN]) {
@@ -32,6 +34,16 @@ const GET_ISSUES_OF_REPOSITORY = `
             hasNextPage
           }
         }
+      }
+    }
+  }
+`;
+
+const ADD_STAR = `
+  mutation ($repositoryId: ID!) {
+    addStar(input:{starrableId:$repositoryId}) {
+      starrable {
+        viewerHasStarred
       }
     }
   }
@@ -74,6 +86,13 @@ const resolveIssuesQuery = (queryResult, cursor) => (state) => {
     errors
   };
 };
+
+const addStarToRepository = (repositoryId) => {
+  return axiosGitHubGraphQL.post('', {
+    query: ADD_STAR,
+    variables: { repositoryId }
+  });
+};
 class App extends Component {
   state = {
     path: 'the-road-to-learn-react/the-road-to-learn-react',
@@ -106,6 +125,10 @@ class App extends Component {
     event.preventDefault();
   };
 
+  onStarRepository = (id) => {
+    addStarToRepository(id);
+  };
+
   render() {
     const { path, organization, error } = this.state;
     return (
@@ -128,6 +151,7 @@ class App extends Component {
             organization={organization}
             errors={error}
             onFetchMoreIssues={this.onFetchMoreIssues}
+            onStarRepository={this.onStarRepository}
           />
         )}
       </div>
